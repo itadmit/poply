@@ -34,6 +34,10 @@ model User {
   smsMessages   SmsMessage[]
   smsApiKeys    SmsApiKey[]
   shortLinks    ShortLink[]
+  abTests       ABTest[]
+  dynamicTemplates DynamicTemplate[]
+  behavioralTriggers BehavioralTrigger[]
+  emailTemplates EmailTemplate[]
 
   // SMS Balance
   smsBalance    Int      @default(0)
@@ -67,6 +71,9 @@ model Contact {
   smsLinks      SmsLink[]
   linkClicks    LinkClick[]
   sessions      ContactSession[]
+  abTestAssignments ABTestAssignment[]
+  abTestEvents      ABTestEvent[]
+  triggerExecutions TriggerExecution[]
 
   @@map("contacts")
 }
@@ -90,6 +97,7 @@ model Campaign {
   events    Event[]
   emailTracking EmailTracking[]
   smsMessages   SmsMessage[]
+  emailTemplates EmailTemplate[]
 
   @@map("campaigns")
 }
@@ -531,6 +539,182 @@ model SessionEvent {
   @@map("session_events")
 }
 
+// A/B Testing Models
+model ABTest {
+  id            String        @id @default(cuid())
+  name          String
+  description   String?
+  type          ABTestType    // EMAIL, SMS, CAMPAIGN
+  status        ABTestStatus  @default(DRAFT)
+  successMetric String        // EMAIL_OPEN, EMAIL_CLICK, ORDER_COMPLETE, etc.
+  duration      Int           // Duration in days
+  autoWinner    Boolean       @default(false)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  endDate       DateTime?
+  finalResults  Json?         // Store final results as JSON
+  targetAudience Json?        // Store audience criteria as JSON
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variants    ABTestVariant[]
+  assignments ABTestAssignment[]
+  events      ABTestEvent[]
+
+  @@map("ab_tests")
+}
+
+model ABTestVariant {
+  id                String   @id @default(cuid())
+  name              String
+  content           Json     // Store variant content (subject, body, etc.)
+  trafficPercentage Float    // Percentage of traffic for this variant
+  isControl         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  testId      String
+  test        ABTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+  assignments ABTestAssignment[]
+  events      ABTestEvent[]
+
+  @@map("ab_test_variants")
+}
+
+model ABTestAssignment {
+  id         String   @id @default(cuid())
+  assignedAt DateTime @default(now())
+
+  // Relations
+  testId    String
+  test      ABTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ABTestVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, contactId])
+  @@map("ab_test_assignments")
+}
+
+model ABTestEvent {
+  id        String   @id @default(cuid())
+  eventType String   // EMAIL_OPEN, EMAIL_CLICK, ORDER_COMPLETE, etc.
+  eventData Json?    // Additional event data
+  timestamp DateTime @default(now())
+
+  // Relations
+  testId    String
+  test      ABTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ABTestVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@map("ab_test_events")
+}
+
+// Dynamic Content Models
+model DynamicTemplate {
+  id          String              @id @default(cuid())
+  name        String
+  type        DynamicTemplateType // EMAIL, SMS, POPUP
+  subject     String?             // For email templates
+  content     String              // Template content with variables
+  variables   String[]            // List of available variables
+  conditions  Json?               // Conditions for content variations
+  isActive    Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  // Relations
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("dynamic_templates")
+}
+
+// Behavioral Triggers Models
+model BehavioralTrigger {
+  id              String                @id @default(cuid())
+  name            String
+  description     String?
+  triggerType     BehavioralTriggerType
+  conditions      Json                  // Complex conditions as JSON
+  actions         Json                  // Actions to execute as JSON
+  isActive        Boolean               @default(true)
+  cooldownPeriod  Int?                  // Hours between executions for same contact
+  maxExecutions   Int?                  // Maximum total executions
+  executionCount  Int                   @default(0)
+  priority        TriggerPriority       @default(MEDIUM)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  // Relations
+  userId     String
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  executions TriggerExecution[]
+
+  @@map("behavioral_triggers")
+}
+
+model TriggerExecution {
+  id         String   @id @default(cuid())
+  eventData  Json?    // The event data that triggered this execution
+  executedAt DateTime @default(now())
+
+  // Relations
+  triggerId String
+  trigger   BehavioralTrigger @relation(fields: [triggerId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@map("trigger_executions")
+}
+
+// Email Templates Models
+model EmailTemplate {
+  id              String                @id @default(cuid())
+  name            String
+  description     String?
+  category        EmailTemplateCategory @default(GENERAL)
+  subject         String
+  htmlContent     String                // HTML content of the email
+  textContent     String?               // Plain text version
+  previewText     String?               // Preview text for email clients
+  isResponsive    Boolean               @default(true)
+  variables       String[]              // Available variables for personalization
+  designSettings  Json?                 // Design settings (colors, fonts, etc.)
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  // Relations
+  userId       String
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns    Campaign[]
+  usageStats   TemplateUsage[]
+
+  @@map("email_templates")
+}
+
+model TemplateUsage {
+  id         String   @id @default(cuid())
+  usageType  String   // 'campaign', 'test', 'automation', etc.
+  metadata   Json?    // Additional usage metadata
+  usedAt     DateTime @default(now())
+
+  // Relations
+  templateId String
+  template   EmailTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("template_usage")
+}
+
 // SMS Enums
 enum SmsStatus {
   PENDING
@@ -538,4 +722,59 @@ enum SmsStatus {
   DELIVERED      // Status 1 from SMS4FREE
   FAILED         // Status 5 from SMS4FREE
   VALID_NUMBER   // Status 6 from SMS4FREE
+}
+
+// A/B Testing Enums
+enum ABTestType {
+  EMAIL
+  SMS
+  CAMPAIGN
+  POPUP
+}
+
+enum ABTestStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+// Dynamic Content Enums
+enum DynamicTemplateType {
+  EMAIL
+  SMS
+  POPUP
+  CAMPAIGN
+}
+
+// Behavioral Triggers Enums
+enum BehavioralTriggerType {
+  EVENT_BASED        // Triggered by specific events
+  TIME_BASED         // Triggered by time conditions
+  BEHAVIOR_SEQUENCE  // Triggered by sequence of behaviors
+  INACTIVITY         // Triggered by lack of activity
+  MILESTONE          // Triggered by reaching milestones
+  CUSTOM             // Custom trigger logic
+}
+
+enum TriggerPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Email Template Enums
+enum EmailTemplateCategory {
+  GENERAL
+  WELCOME
+  PROMOTIONAL
+  TRANSACTIONAL
+  NEWSLETTER
+  CART_ABANDONMENT
+  WIN_BACK
+  BIRTHDAY
+  SEASONAL
+  CUSTOM
 }

@@ -54,6 +54,15 @@ app.use('/api/v1/sms', require('./routes/sms-api'));
 app.use('/api/tracking', require('./routes/tracking-stats'));
 app.use('/api/sms-packages', require('./routes/sms-packages'));
 
+// Klaviyo-inspired advanced features
+app.use('/api/predictive-analytics', require('./routes/predictive-analytics'));
+app.use('/api/customer-journey', require('./routes/customer-journey'));
+app.use('/api/ab-testing', require('./routes/ab-testing'));
+app.use('/api/dynamic-content', require('./routes/dynamic-content'));
+app.use('/api/behavioral-triggers', require('./routes/behavioral-triggers'));
+app.use('/api/advanced-segmentation', require('./routes/advanced-segmentation'));
+app.use('/api/email-templates', require('./routes/email-templates'));
+
 // Webhooks (no authentication required)
 app.use('/webhooks', require('./routes/webhooks'));
 
