@@ -1,0 +1,541 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  company   String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  campaigns     Campaign[]
+  contacts      Contact[]
+  automations   Automation[]
+  popups        Popup[]
+  products      Product[]
+  orders        Order[]
+  events        Event[]
+  segments      Segment[]
+  smsPackages   SmsPackage[]
+  smsMessages   SmsMessage[]
+  smsApiKeys    SmsApiKey[]
+  shortLinks    ShortLink[]
+
+  // SMS Balance
+  smsBalance    Int      @default(0)
+  smsSenderName String?  // Default sender name for SMS
+
+  @@map("users")
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  email     String
+  firstName String?
+  lastName  String?
+  phone     String?
+  company   String?
+  tags      String[]
+  status    ContactStatus @default(ACTIVE)
+  source    String? // Where they came from
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId     String
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events     Event[]
+  orders     Order[]
+  segments   SegmentContact[]
+  campaigns  CampaignContact[]
+  emailTracking EmailTracking[]
+  smsMessages   SmsMessage[]
+  smsLinks      SmsLink[]
+  linkClicks    LinkClick[]
+  sessions      ContactSession[]
+
+  @@map("contacts")
+}
+
+model Campaign {
+  id          String        @id @default(cuid())
+  name        String
+  subject     String
+  content     String
+  type        CampaignType
+  status      CampaignStatus @default(DRAFT)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contacts  CampaignContact[]
+  events    Event[]
+  emailTracking EmailTracking[]
+  smsMessages   SmsMessage[]
+
+  @@map("campaigns")
+}
+
+model Automation {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  trigger     AutomationTrigger
+  conditions  Json // Store trigger conditions as JSON
+  actions     Json // Store actions as JSON
+  status      AutomationStatus  @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("automations")
+}
+
+model Popup {
+  id          String     @id @default(cuid())
+  name        String
+  title       String
+  content     String
+  type        PopupType
+  trigger     PopupTrigger
+  conditions  Json // Store trigger conditions as JSON
+  design      Json // Store design settings as JSON
+  status      PopupStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events Event[]
+
+  @@map("popups")
+}
+
+model Product {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?
+  category    String?
+  tags        String[]
+  status      ProductStatus @default(ACTIVE)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@map("products")
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  orderId   String      @unique
+  total     Float
+  status    OrderStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  // Relations
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("orders")
+}
+
+model Event {
+  id        String    @id @default(cuid())
+  type      EventType
+  data      Json // Store event data as JSON
+  createdAt DateTime  @default(now())
+
+  // Relations
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  campaignId String?
+  campaign  Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  popupId   String?
+  popup     Popup? @relation(fields: [popupId], references: [id], onDelete: Cascade)
+
+  @@map("events")
+}
+
+model Segment {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  conditions  Json // Store segment conditions as JSON
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contacts SegmentContact[]
+
+  @@map("segments")
+}
+
+model SegmentContact {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Relations
+  segmentId String
+  segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([segmentId, contactId])
+  @@map("segment_contacts")
+}
+
+model CampaignContact {
+  id        String   @id @default(cuid())
+  status    CampaignContactStatus @default(PENDING)
+  sentAt    DateTime?
+  openedAt  DateTime?
+  clickedAt DateTime?
+  createdAt DateTime @default(now())
+
+  // Relations
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId  String
+  contact    Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@map("campaign_contacts")
+}
+
+model EmailTracking {
+  id            String    @id @default(cuid())
+  messageId     String    @unique
+  to            String
+  from          String
+  subject       String
+  campaignId    String?
+  campaign      Campaign? @relation(fields: [campaignId], references: [id])
+  contactId     String?
+  contact       Contact?  @relation(fields: [contactId], references: [id])
+  status        String    @default("sent")
+  sentAt        DateTime  @default(now())
+  openedAt      DateTime?
+  clickedAt     DateTime?
+  bouncedAt     DateTime?
+  unsubscribedAt DateTime?
+  openCount     Int       @default(0)
+  clickCount    Int       @default(0)
+  clicks        Json[]    @default([])
+  userAgent     String?
+  ipAddress     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("email_tracking")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum ContactStatus {
+  ACTIVE
+  INACTIVE
+  UNSUBSCRIBED
+  BOUNCED
+}
+
+enum CampaignType {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+enum AutomationTrigger {
+  CONTACT_CREATED
+  CONTACT_UPDATED
+  ORDER_CREATED
+  ORDER_COMPLETED
+  CART_ABANDONED
+  PAGE_VISITED
+  EMAIL_OPENED
+  EMAIL_CLICKED
+  CUSTOM
+}
+
+enum AutomationStatus {
+  ACTIVE
+  INACTIVE
+  PAUSED
+}
+
+enum PopupType {
+  EXIT_INTENT
+  TIME_DELAY
+  SCROLL_PERCENTAGE
+  PAGE_VIEWS
+  CUSTOM
+}
+
+enum PopupTrigger {
+  EXIT_INTENT
+  TIME_DELAY
+  SCROLL_PERCENTAGE
+  PAGE_VIEWS
+  CUSTOM
+}
+
+enum PopupStatus {
+  ACTIVE
+  INACTIVE
+  DRAFT
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  OUT_OF_STOCK
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum EventType {
+  PAGE_VIEW
+  EMAIL_OPEN
+  EMAIL_CLICK
+  POPUP_SHOWN
+  POPUP_CLOSED
+  CART_ADD
+  CART_REMOVE
+  CHECKOUT_START
+  ORDER_COMPLETE
+  CUSTOM
+}
+
+enum CampaignContactStatus {
+  PENDING
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  BOUNCED
+  FAILED
+}
+
+// SMS Models
+model SmsPackage {
+  id          String   @id @default(cuid())
+  name        String
+  amount      Int      // Number of SMS messages
+  price       Float    // Price of the package
+  purchasedAt DateTime @default(now())
+  paymentTransactionId String? // PayPlus transaction ID
+  
+  // Relations
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sms_packages")
+}
+
+model SmsPackageTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  amount      Int      // Number of SMS messages
+  price       Float    // Price in ILS
+  discount    Float    @default(0) // Discount percentage
+  isActive    Boolean  @default(true)
+  isPopular   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("sms_package_templates")
+}
+
+model SmsMessage {
+  id          String      @id @default(cuid())
+  recipient   String      // Phone number
+  sender      String      // Sender name or number
+  content     String
+  status      SmsStatus   @default(PENDING)
+  apiResponse Json?       // Store API response
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  // Relations
+  userId     String
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id])
+  contactId  String?
+  contact    Contact? @relation(fields: [contactId], references: [id])
+  
+  // Link tracking
+  smsLinks   SmsLink[]
+  
+  @@map("sms_messages")
+}
+
+model SmsApiKey {
+  id        String   @id @default(cuid())
+  key       String   @unique @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([key])
+  @@map("sms_api_keys")
+}
+
+// Link Tracking Models
+model ShortLink {
+  id          String   @id @default(cuid())
+  shortCode   String   @unique
+  originalUrl String
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+  
+  // Relations
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clicks LinkClick[]
+  smsLinks SmsLink[]
+  
+  @@index([shortCode])
+  @@map("short_links")
+}
+
+model SmsLink {
+  id         String   @id @default(cuid())
+  token      String   @unique // Unique token for each recipient
+  createdAt  DateTime @default(now())
+  
+  // Relations
+  shortLinkId String
+  shortLink   ShortLink @relation(fields: [shortLinkId], references: [id])
+  smsMessageId String
+  smsMessage   SmsMessage @relation(fields: [smsMessageId], references: [id])
+  contactId    String?
+  contact      Contact? @relation(fields: [contactId], references: [id])
+  
+  // Tracking
+  clicks      LinkClick[]
+  
+  @@index([token])
+  @@map("sms_links")
+}
+
+model LinkClick {
+  id         String   @id @default(cuid())
+  clickedAt  DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+  referer    String?
+  
+  // Relations
+  shortLinkId String
+  shortLink   ShortLink @relation(fields: [shortLinkId], references: [id])
+  smsLinkId   String?
+  smsLink     SmsLink? @relation(fields: [smsLinkId], references: [id])
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id])
+  
+  // Session tracking
+  sessionId   String?
+  
+  @@map("link_clicks")
+}
+
+model ContactSession {
+  id         String   @id @default(cuid())
+  sessionId  String   @unique
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @updatedAt
+  
+  // Relations
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id])
+  events    SessionEvent[]
+  
+  @@index([sessionId])
+  @@map("contact_sessions")
+}
+
+model SessionEvent {
+  id        String   @id @default(cuid())
+  eventType String
+  eventData Json
+  createdAt DateTime @default(now())
+  pageUrl   String?
+  
+  // Relations
+  sessionId String
+  session   ContactSession @relation(fields: [sessionId], references: [id])
+  
+  @@map("session_events")
+}
+
+// SMS Enums
+enum SmsStatus {
+  PENDING
+  SENT
+  DELIVERED      // Status 1 from SMS4FREE
+  FAILED         // Status 5 from SMS4FREE
+  VALID_NUMBER   // Status 6 from SMS4FREE
+}

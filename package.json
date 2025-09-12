@@ -1,0 +1,52 @@
+{
+  "name": "poply",
+  "version": "1.0.0",
+  "description": "Marketing Automation Platform - Poply",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "nodemon server/index.js",
+    "client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "install-all": "npm install && cd client && npm install",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.4.2",
+    "@sendgrid/mail": "^8.1.5",
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "escape-html": "^1.0.3",
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.10.0",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.4",
+    "twilio": "^4.15.0",
+    "web-push": "^3.6.6",
+    "zod": "^3.22.2"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^8.2.1",
+    "nodemon": "^3.0.1",
+    "postcss": "^8.5.6",
+    "prisma": "^5.4.2",
+    "tailwindcss": "^3.4.0"
+  },
+  "keywords": [
+    "marketing",
+    "automation",
+    "email",
+    "popups",
+    "ecommerce"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
