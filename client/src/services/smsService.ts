@@ -120,11 +120,7 @@ export const smsService = {
     return response.data;
   },
 
-  // עדכון הגדרות SMS
-  updateSmsSettings: async (settings: { senderName: string }) => {
-    const response = await api.post('/sms/settings', settings);
-    return response.data;
-  },
+
 };
 
 export default smsService;

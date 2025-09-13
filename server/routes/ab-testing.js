@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const abTesting = require('../services/abTesting');
-const auth = require('../middleware/auth');
+const { authenticateToken: auth } = require('../middleware/auth');
 
 // יצירת בדיקת A/B חדשה
 router.post('/', auth, async (req, res) => {

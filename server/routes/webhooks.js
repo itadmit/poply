@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const smsService = require('../services/smsService');
+const smsQueueService = require('../services/smsQueueService');
 
 // SMS status webhook from SMS4FREE
 router.get('/sms/status', async (req, res) => {
@@ -13,7 +13,7 @@ router.get('/sms/status', async (req, res) => {
       return res.status(400).send('Missing parameters');
     }
 
-    await smsService.updateSmsStatus(to, parseInt(status));
+    await smsQueueService.updateSmsStatus(to, parseInt(status));
     
     // Return 200 OK immediately
     res.status(200).send('OK');
@@ -35,7 +35,7 @@ router.post('/sms/status', async (req, res) => {
       return res.status(400).send('Missing parameters');
     }
 
-    await smsService.updateSmsStatus(to, parseInt(status));
+    await smsQueueService.updateSmsStatus(to, parseInt(status));
     
     res.status(200).send('OK');
   } catch (error) {

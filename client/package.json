@@ -22,8 +22,11 @@
     "react-chartjs-2": "^5.3.0",
     "react-dom": "^19.1.1",
     "react-hook-form": "^7.62.0",
+    "react-is": "^19.1.1",
     "react-router-dom": "^7.8.2",
+    "reactflow": "^11.11.4",
     "recharts": "^3.2.0",
+    "sequential-workflow-designer": "^0.30.2",
     "vite": "^4.5.14",
     "zod": "^4.1.8"
   },

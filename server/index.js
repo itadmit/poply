@@ -6,6 +6,9 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const { PrismaClient } = require('@prisma/client');
+// Initialize campaign queue and SMS queue
+require('./services/campaignQueue');
+require('./services/smsQueueService');
 
 const app = express();
 const prisma = new PrismaClient();
@@ -69,6 +72,9 @@ app.use('/webhooks', require('./routes/webhooks'));
 // Link tracking (public endpoints)
 app.use('/l', require('./routes/link-tracking'));
 
+// Unsubscribe (public endpoints)
+app.use('/api/unsubscribe', require('./routes/unsubscribe'));
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -93,6 +99,8 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📬 Campaign queue initialized and ready`);
+  console.log(`📱 SMS queue initialized and ready`);
 });
 
 // Graceful shutdown

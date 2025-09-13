@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -12,57 +12,14 @@ import {
   Eye,
   Edit,
   Trash2,
-  Users
+  Users,
+  Loader2
 } from 'lucide-react';
-import { DataTable } from '../components';
+import { DataTable, ContactViewModal, ContactEditModal, ContactCreateModal } from '../components';
+import { contactsService } from '../services/contactsService';
+import type { Contact, ContactStats, CreateContactData, UpdateContactData } from '../services/contactsService';
 
-const contacts = [
-  {
-    id: '1',
-    email: 'john.doe@example.com',
-    firstName: 'יוחנן',
-    lastName: 'כהן',
-    phone: '+972-50-123-4567',
-    company: 'חברת ABC',
-    status: 'ACTIVE',
-    tags: ['VIP', 'Newsletter'],
-    createdAt: '2024-01-15',
-    lastActivity: '2024-01-20',
-    orders: 3,
-    events: 12,
-    campaigns: 5,
-  },
-  {
-    id: '2',
-    email: 'jane.smith@example.com',
-    firstName: 'שרה',
-    lastName: 'לוי',
-    phone: '+972-52-987-6543',
-    company: 'חברת XYZ',
-    status: 'ACTIVE',
-    tags: ['New Customer'],
-    createdAt: '2024-01-18',
-    lastActivity: '2024-01-19',
-    orders: 1,
-    events: 8,
-    campaigns: 2,
-  },
-  {
-    id: '3',
-    email: 'mike.wilson@example.com',
-    firstName: 'מיכאל',
-    lastName: 'וילסון',
-    phone: '+972-54-555-1234',
-    company: 'חברת DEF',
-    status: 'INACTIVE',
-    tags: ['Old Customer'],
-    createdAt: '2023-12-10',
-    lastActivity: '2024-01-10',
-    orders: 0,
-    events: 3,
-    campaigns: 1,
-  },
-];
+// Removed static data - will be loaded from API
 
 const statusColors: Record<string, string> = {
   ACTIVE: 'bg-green-100 text-green-800',
@@ -79,21 +36,60 @@ const statusLabels: Record<string, string> = {
 };
 
 export const Contacts: React.FC = () => {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [stats, setStats] = useState<ContactStats | null>(null);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
+  
+  // Modal states
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
 
-  const filteredContacts = contacts.filter(contact => {
-    const matchesSearch = 
-      contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = selectedStatus === 'all' || contact.status === selectedStatus;
-    
-    return matchesSearch && matchesStatus;
-  });
+  useEffect(() => {
+    loadContacts();
+    loadStats();
+  }, []);
+
+  const loadContacts = async () => {
+    try {
+      setLoading(true);
+      const response = await contactsService.getContacts({
+        limit: 100, // Load more contacts for better UX
+        search: searchTerm || undefined,
+        status: selectedStatus !== 'all' ? selectedStatus : undefined
+      });
+      setContacts(response.contacts);
+    } catch (error) {
+      console.error('Error loading contacts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    try {
+      const statsData = await contactsService.getContactStats();
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
+  // Reload contacts when search or filter changes
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      loadContacts();
+    }, 300); // Debounce search
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, selectedStatus]);
+
+  const filteredContacts = contacts;
 
   const handleSelectContact = (contactId: string) => {
     setSelectedContacts(prev => 
@@ -111,6 +107,72 @@ export const Contacts: React.FC = () => {
     }
   };
 
+  const handleViewContact = async (contact: Contact) => {
+    try {
+      const fullContact = await contactsService.getContact(contact.id);
+      setSelectedContact(fullContact);
+      setViewModalOpen(true);
+    } catch (error) {
+      console.error('Error loading contact details:', error);
+    }
+  };
+
+  const handleEditContact = (contact: Contact) => {
+    setSelectedContact(contact);
+    setEditModalOpen(true);
+  };
+
+  const handleCreateContact = () => {
+    setCreateModalOpen(true);
+  };
+
+  const handleSaveContact = async (data: UpdateContactData) => {
+    if (!selectedContact) return;
+    
+    try {
+      setModalLoading(true);
+      await contactsService.updateContact(selectedContact.id, data);
+      await loadContacts();
+      await loadStats();
+      setEditModalOpen(false);
+      setSelectedContact(null);
+    } catch (error) {
+      console.error('Error updating contact:', error);
+      throw error;
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleCreateNewContact = async (data: CreateContactData) => {
+    try {
+      setModalLoading(true);
+      await contactsService.createContact(data);
+      await loadContacts();
+      await loadStats();
+      setCreateModalOpen(false);
+    } catch (error) {
+      console.error('Error creating contact:', error);
+      throw error;
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleDeleteContact = async (contactId: string) => {
+    if (!confirm('האם אתה בטוח שברצונך למחוק את איש הקשר?')) {
+      return;
+    }
+
+    try {
+      await contactsService.deleteContact(contactId);
+      await loadContacts();
+      await loadStats();
+    } catch (error) {
+      console.error('Error deleting contact:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -124,13 +186,16 @@ export const Contacts: React.FC = () => {
               <div>
                 <h1 className="text-2xl font-semibold text-gray-900">אנשי קשר</h1>
                 <p className="mt-1 text-sm text-gray-600">
-                  {filteredContacts.length} אנשי קשר מתוך {contacts.length} סה"כ
+                  {loading ? 'טוען...' : `${filteredContacts.length} אנשי קשר מתוך ${stats?.totalContacts || 0} סה"כ`}
                 </p>
               </div>
             </div>
-            <button className="btn btn-primary flex items-center">
+            <button 
+              onClick={handleCreateContact}
+              className="btn btn-primary flex items-center"
+            >
               <Plus className="h-4 w-4 ml-2" />
-              הוסף קונטקט
+              הוסף איש קשר
             </button>
           </div>
         </div>
@@ -143,7 +208,9 @@ export const Contacts: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">סה"כ אנשי קשר</p>
-                <p className="text-2xl font-semibold text-gray-900 mt-1">2,345</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {loading ? '...' : stats?.totalContacts || 0}
+                </p>
               </div>
               <div className="flex items-center justify-center h-12 w-12 rounded-full bg-blue-100">
                 <Users className="h-6 w-6 text-blue-600" />
@@ -155,7 +222,9 @@ export const Contacts: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">אנשי קשר פעילים</p>
-                <p className="text-2xl font-semibold text-gray-900 mt-1">1,890</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {loading ? '...' : stats?.activeContacts || 0}
+                </p>
               </div>
               <div className="flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
                 <div className="h-3 w-3 bg-green-500 rounded-full"></div>
@@ -167,7 +236,9 @@ export const Contacts: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">ביטלו הרשמה</p>
-                <p className="text-2xl font-semibold text-gray-900 mt-1">234</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {loading ? '...' : stats?.unsubscribedContacts || 0}
+                </p>
               </div>
               <div className="flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
                 <div className="h-3 w-3 bg-red-500 rounded-full"></div>
@@ -179,7 +250,9 @@ export const Contacts: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">נדחו</p>
-                <p className="text-2xl font-semibold text-gray-900 mt-1">221</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {loading ? '...' : stats?.bouncedContacts || 0}
+                </p>
               </div>
               <div className="flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100">
                 <div className="h-3 w-3 bg-yellow-500 rounded-full"></div>
@@ -290,19 +363,19 @@ export const Contacts: React.FC = () => {
             },
             {
               key: 'contact',
-              header: 'קונטקט',
+              header: 'איש קשר',
               render: (contact) => (
                 <div className="flex items-center">
                   <div className="flex-shrink-0 h-10 w-10">
                     <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center">
                       <span className="text-sm font-medium text-white">
-                        {contact.firstName.charAt(0)}{contact.lastName.charAt(0)}
+                        {(contact.firstName || '').charAt(0)}{(contact.lastName || '').charAt(0)}
                       </span>
                     </div>
                   </div>
                   <div className="mr-4">
                     <div className="text-sm font-medium text-gray-900">
-                      {contact.firstName} {contact.lastName}
+                      {contact.firstName || ''} {contact.lastName || ''}
                     </div>
                     <div className="text-sm text-gray-500 flex items-center">
                       <Mail className="h-4 w-4 ml-1" />
@@ -358,9 +431,9 @@ export const Contacts: React.FC = () => {
               header: 'פעילות',
               render: (contact) => (
                 <div className="text-sm text-gray-500 space-y-1">
-                  <div>הזמנות: {contact.orders}</div>
-                  <div>אירועים: {contact.events}</div>
-                  <div>קמפיינים: {contact.campaigns}</div>
+                  <div>הזמנות: {contact._count?.orders || 0}</div>
+                  <div>אירועים: {contact._count?.events || 0}</div>
+                  <div>קמפיינים: {contact._count?.campaigns || 0}</div>
                 </div>
               )
             },
@@ -377,15 +450,27 @@ export const Contacts: React.FC = () => {
             {
               key: 'actions',
               header: '',
-              render: () => (
+              render: (contact) => (
                 <div className="flex items-center justify-end gap-2">
-                  <button className="text-blue-600 hover:text-blue-900">
+                  <button 
+                    onClick={() => handleViewContact(contact)}
+                    className="text-blue-600 hover:text-blue-900"
+                    title="צפה בפרטים"
+                  >
                     <Eye className="h-4 w-4" />
                   </button>
-                  <button className="text-gray-600 hover:text-gray-900">
+                  <button 
+                    onClick={() => handleEditContact(contact)}
+                    className="text-gray-600 hover:text-gray-900"
+                    title="ערוך"
+                  >
                     <Edit className="h-4 w-4" />
                   </button>
-                  <button className="text-red-600 hover:text-red-900">
+                  <button 
+                    onClick={() => handleDeleteContact(contact.id)}
+                    className="text-red-600 hover:text-red-900"
+                    title="מחק"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -395,11 +480,50 @@ export const Contacts: React.FC = () => {
           ]}
           emptyMessage={
             searchTerm || selectedStatus !== 'all' 
-              ? 'לא נמצאו קונטקטים התואמים לחיפוש שלך'
-              : 'התחל בהוספת קונטקטים חדשים'
+              ? 'לא נמצאו אנשי קשר התואמים לחיפוש שלך'
+              : 'התחל בהוספת אנשי קשר חדשים'
           }
         />
+
+        {/* Loading overlay */}
+        {loading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          </div>
+        )}
       </div>
+
+      {/* Modals */}
+      {selectedContact && (
+        <ContactViewModal
+          contact={selectedContact}
+          isOpen={viewModalOpen}
+          onClose={() => {
+            setViewModalOpen(false);
+            setSelectedContact(null);
+          }}
+        />
+      )}
+
+      {selectedContact && (
+        <ContactEditModal
+          contact={selectedContact}
+          isOpen={editModalOpen}
+          onClose={() => {
+            setEditModalOpen(false);
+            setSelectedContact(null);
+          }}
+          onSave={handleSaveContact}
+          isLoading={modalLoading}
+        />
+      )}
+
+      <ContactCreateModal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onSave={handleCreateNewContact}
+        isLoading={modalLoading}
+      />
     </div>
   );
 };

@@ -36,13 +36,18 @@
 - **Nodemailer** - שליחת אימיילים
 - **Twilio** - SMS
 - **Web Push** - התראות
+- **Bull Queue** - תור עבודות לשליחה ברקע (קמפיינים ו-SMS)
+- **Redis** - מסד נתונים לתור
 
 ## התקנה
 
 ### דרישות מוקדמות
 - Node.js 18+
 - PostgreSQL 14+
-- npm או yarn
+- Redis 6+ (לתור קמפיינים)
+- Yarn (מומלץ) או npm
+
+**הערה חשובה:** מומלץ להשתמש ב-Yarn במקום npm עקב בעיות תאימות עם חלק מהחבילות.
 
 ### התקנת הפרויקט
 
@@ -62,8 +67,15 @@ cd poply
 
 2. **התקנת תלויות**
 ```bash
-# התקנת כל התלויות
-npm run install-all
+# התקנת תלויות השרת
+yarn install
+
+# התקנת תלויות הלקוח
+cd client && yarn install && cd ..
+
+# התקנת תלויות נוספות חסרות
+yarn add uuid
+cd client && yarn add react-is && cd ..
 ```
 
 3. **הגדרת מסד נתונים**
@@ -72,13 +84,22 @@ npm run install-all
 cp env.example .env
 
 # עריכת קובץ .env עם פרטי המסד נתונים
-# DATABASE_URL="postgresql://tadmitinteractive@localhost:5432/poply?schema=public"
+# DATABASE_URL="postgresql://[USERNAME]@localhost:5432/poply?schema=public"
+# החלף [USERNAME] בשם המשתמש שלך במערכת
 ```
 
 4. **הגדרת מסד הנתונים**
 ```bash
 # יצירת המסד נתונים
 createdb poply
+
+# התקנת והפעלת Redis (macOS)
+brew install redis
+brew services start redis
+
+# התקנת והפעלת Redis (Ubuntu/Debian)
+# sudo apt update && sudo apt install redis-server
+# sudo systemctl start redis-server
 
 # סנכרון סכמת המסד נתונים
 npx prisma db push
@@ -148,7 +169,9 @@ poply/
 - `POST /api/campaigns` - יצירת קמפיין
 - `PUT /api/campaigns/:id` - עדכון קמפיין
 - `DELETE /api/campaigns/:id` - מחיקת קמפיין
-- `POST /api/campaigns/:id/send` - שליחת קמפיין
+- `POST /api/campaigns/:id/send` - שליחת קמפיין (ברקע)
+- `POST /api/campaigns/:id/cancel` - ביטול קמפיין
+- `GET /api/campaigns/:id/stats` - סטטיסטיקות קמפיין
 
 ### אוטומציות
 - `GET /api/automations` - רשימת אוטומציות
@@ -188,11 +211,17 @@ poply/
 
 ### הרצה במצב פיתוח
 ```bash
-npm run dev
+# עם yarn (מומלץ)
+DATABASE_URL="postgresql://[USERNAME]@localhost:5432/poply?schema=public" yarn dev
+
+# או עם npm
+DATABASE_URL="postgresql://[USERNAME]@localhost:5432/poply?schema=public" npm run dev
 ```
 
 ### בניית הפרויקט
 ```bash
+yarn build
+# או
 npm run build
 ```
 
@@ -205,6 +234,73 @@ npx prisma studio
 ```bash
 npx prisma migrate dev --name <migration-name>
 ```
+
+## שליחת קמפיינים ברקע
+
+המערכת משתמשת ב-Bull Queue ו-Redis לשליחת קמפיינים ברקע, תוך שימוש בשירותי השליחה הקיימים:
+
+### תכונות מתקדמות
+- **שימוש בשירותים קיימים** - קמפיינים משתמשים בשירותי SMS ואימייל הקיימים
+- **קיצור קישורים אוטומטי** - ב-SMS עם מעקב קליקים
+- **מעקב אימיילים** - פיקסל מעקב ומעקב קליקים
+- **שם שולח מותאם אישית** - לכל משתמש
+- **ניהול יתרות** - בדיקה אוטומטית של יתרת SMS
+- **שליחה ברקע** - ללא חסימת הממשק
+- **תזמון מתקדם** - שליחה מיידית או מתוזמנת
+
+### ארכיטקטורה
+- **קמפיינים** - פאנל ניהול ותזמון בלבד
+- **שירותי שליחה** - SMS ואימייל עם כל התכונות המתקדמות
+- **תור עבודות** - עיבוד ברקע עם Bull Queue
+- **מסד נתונים** - מעקב מלא אחרי כל שליחה
+
+### ניטור התור
+```bash
+# צפייה בסטטוס התור (מנהלים בלבד)
+GET /api/campaigns/queue/stats
+GET /api/sms/queue/stats
+```
+
+## מעקב קישורים מתקדם (כמו פלאשי)
+
+המערכת כוללת מעקב קישורים מתקדם עם טוכנים ייחודיים לכל נמען:
+
+### תכונות
+- **קישורים ייחודיים לכל נמען** - כל איש קשר מקבל קישור ייחודי
+- **מעקב רציף** - מעקב אחר פעילות גם אחרי שהמשתמש עזב ושב
+- **ניהול sessions** - זיהוי אוטומטי של משתמשים חוזרים (30 יום)
+- **אירועי אוטומציה** - הפעלת אוטומציות על בסיס קליקים
+- **קיצור קישורים אוטומטי** - כל קישור בהודעה מתקצר אוטומטית
+
+### מימוש טכני
+- **טוקנים ייחודיים** - כל קישור מקבל טוקן ייחודי לנמען
+- **מעקב IP ו-User Agent** - זיהוי מדויק של המשתמש
+- **שמירת היסטוריה** - כל קליק נשמר עם פרטים מלאים
+- **אינטגרציה עם אוטומציות** - קליקים מפעילים אוטומציות
+
+## מערכת הסרה מדיוור
+
+המערכת כוללת מערכת הסרה מדיוור מתקדמת עם ממשק ידידותי:
+
+### תכונות
+- **הסרה נפרדת לEmail ו-SMS** - בחירה מה להסיר
+- **לינקים מקוצרים** - לינקי הסרה מקוצרים ונוחים
+- **ממשק ידידותי** - דף הסרה מעוצב ונוח
+- **הרשמה מחדש** - אפשרות להירשם מחדש בקלות
+- **מעקב פעולות** - רישום כל פעולות ההסרה וההרשמה
+- **הוספה אוטומטית** - לינק הסרה נוסף אוטומטית לכל הודעה
+
+### נתיבי API
+- `GET /api/unsubscribe/:token` - קבלת פרטי טוקן הסרה
+- `POST /api/unsubscribe/:token/unsubscribe` - הסרה מדיוור
+- `POST /api/unsubscribe/:token/resubscribe` - הרשמה מחדש
+- `GET /api/unsubscribe/status/:contactId/:messageType` - בדיקת סטטוס
+
+### דף הסרה
+- נגיש בכתובת: `/unsubscribe/:token`
+- ממשק ידידותי עם פרטי איש הקשר
+- אפשרות הסרה או הרשמה מחדש
+- תמיכה בעברית מלאה
 
 ## רישיון
 

@@ -38,6 +38,9 @@ model User {
   dynamicTemplates DynamicTemplate[]
   behavioralTriggers BehavioralTrigger[]
   emailTemplates EmailTemplate[]
+  unsubscribeTokens UnsubscribeToken[]
+  unsubscribeLogs UnsubscribeLog[]
+  resubscribeLogs ResubscribeLog[]
 
   // SMS Balance
   smsBalance    Int      @default(0)
@@ -56,6 +59,12 @@ model Contact {
   tags      String[]
   status    ContactStatus @default(ACTIVE)
   source    String? // Where they came from
+  
+  // Unsubscribe tracking
+  emailUnsubscribed Boolean @default(false)
+  smsUnsubscribed   Boolean @default(false)
+  unsubscribedAt    DateTime?
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -74,6 +83,9 @@ model Contact {
   abTestAssignments ABTestAssignment[]
   abTestEvents      ABTestEvent[]
   triggerExecutions TriggerExecution[]
+  unsubscribeTokens UnsubscribeToken[]
+  unsubscribeLogs   UnsubscribeLog[]
+  resubscribeLogs   ResubscribeLog[]
 
   @@map("contacts")
 }
@@ -777,4 +789,63 @@ enum EmailTemplateCategory {
   BIRTHDAY
   SEASONAL
   CUSTOM
+}
+
+// Unsubscribe Models
+model UnsubscribeToken {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  messageType UnsubscribeMessageType @default(BOTH)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  usedAt      DateTime?
+  
+  // Relations
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([token])
+  @@map("unsubscribe_tokens")
+}
+
+model UnsubscribeLog {
+  id          String   @id @default(cuid())
+  messageType UnsubscribeMessageType
+  ipAddress   String?
+  userAgent   String?
+  token       String
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("unsubscribe_logs")
+}
+
+model ResubscribeLog {
+  id          String   @id @default(cuid())
+  messageType UnsubscribeMessageType
+  ipAddress   String?
+  userAgent   String?
+  token       String
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("resubscribe_logs")
+}
+
+enum UnsubscribeMessageType {
+  EMAIL
+  SMS
+  BOTH
 }

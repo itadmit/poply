@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const emailService = require('./emailService');
-const smsService = require('./smsService');
+const smsQueueService = require('./smsQueueService');
 
 class BehavioralTriggers {
 
@@ -486,7 +486,7 @@ class BehavioralTriggers {
         sender: action.sender || contact.user.smsSenderName || 'Poply'
       };
 
-      await smsService.sendSms(contact.user.id, smsData);
+              await smsQueueService.sendSms(contact.userId, contact.phone, smsData.content, smsData.sender, null, contact.id);
 
     } catch (error) {
       console.error('Error sending triggered SMS:', error);

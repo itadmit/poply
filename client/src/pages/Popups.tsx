@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Search,
@@ -16,42 +16,9 @@ import {
 } from 'lucide-react';
 import { Modal } from '../components';
 import { FormInput, FormTextarea, FormSelect, FormButtons } from '../components/form';
+import { popupsService, type Popup } from '../services/popupsService';
 
-const popups = [
-  {
-    id: '1',
-    name: 'הרשמה לניוזלטר',
-    title: 'הצטרף לניוזלטר שלנו!',
-    type: 'EXIT_INTENT',
-    status: 'ACTIVE',
-    shows: 456,
-    conversions: 89,
-    conversionRate: 19.5,
-    createdAt: '2024-01-15',
-  },
-  {
-    id: '2',
-    name: 'הנחה 10%',
-    title: 'קבל 10% הנחה על ההזמנה הראשונה',
-    type: 'TIME_DELAY',
-    status: 'ACTIVE',
-    shows: 234,
-    conversions: 45,
-    conversionRate: 19.2,
-    createdAt: '2024-01-10',
-  },
-  {
-    id: '3',
-    name: 'סקר לקוחות',
-    title: 'עזור לנו לשפר את השירות',
-    type: 'SCROLL_PERCENTAGE',
-    status: 'INACTIVE',
-    shows: 123,
-    conversions: 12,
-    conversionRate: 9.8,
-    createdAt: '2024-01-05',
-  },
-];
+// הנתונים יטענו מהשרת
 
 const typeLabels = {
   EXIT_INTENT: 'כוונת יציאה',
@@ -78,8 +45,79 @@ export const Popups: React.FC = () => {
   const [selectedType, setSelectedType] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [popups, setPopups] = useState<Popup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [createLoading, setCreateLoading] = useState(false);
 
-  const filteredPopups = popups.filter(popup => {
+  useEffect(() => {
+    loadPopups();
+  }, []);
+
+  const loadPopups = async () => {
+    try {
+      setLoading(true);
+      const response = await popupsService.getPopups();
+      setPopups(response.popups);
+      setError(null);
+    } catch (err) {
+      setError('שגיאה בטעינת הפופאפים');
+      console.error('Error loading popups:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreatePopup = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    
+    try {
+      setCreateLoading(true);
+      const newPopup = await popupsService.createPopup({
+        name: formData.get('name') as string,
+        title: formData.get('title') as string,
+        content: formData.get('content') as string,
+        type: formData.get('trigger') as any,
+        trigger: formData.get('trigger') as any,
+        conditions: {},
+        design: {}
+      });
+      
+      setPopups(prev => [newPopup, ...prev]);
+      setIsCreateModalOpen(false);
+      event.currentTarget.reset();
+    } catch (err) {
+      console.error('Error creating popup:', err);
+      alert('שגיאה ביצירת הפופאפ');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (popupId: string) => {
+    try {
+      const updatedPopup = await popupsService.togglePopupStatus(popupId);
+      setPopups(prev => prev.map(p => p.id === popupId ? updatedPopup : p));
+    } catch (err) {
+      console.error('Error toggling popup status:', err);
+      alert('שגיאה בשינוי סטטוס הפופאפ');
+    }
+  };
+
+  const handleDeletePopup = async (popupId: string) => {
+    if (!confirm('האם אתה בטוח שברצונך למחוק את הפופאפ?')) return;
+    
+    try {
+      await popupsService.deletePopup(popupId);
+      setPopups(prev => prev.filter(p => p.id !== popupId));
+    } catch (err) {
+      console.error('Error deleting popup:', err);
+      alert('שגיאה במחיקת הפופאפ');
+    }
+  };
+
+  const filteredPopups = popups.filter((popup: Popup) => {
     const matchesSearch = 
       popup.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       popup.title.toLowerCase().includes(searchTerm.toLowerCase());
@@ -89,6 +127,35 @@ export const Popups: React.FC = () => {
     
     return matchesSearch && matchesType && matchesStatus;
   });
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">טוען פופאפים...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="bg-red-100 rounded-lg p-4">
+            <p className="text-red-800">{error}</p>
+            <button 
+              onClick={loadPopups}
+              className="mt-2 btn btn-primary"
+            >
+              נסה שוב
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -251,23 +318,23 @@ export const Popups: React.FC = () => {
               <div className="mt-4 grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500">הצגות</p>
-                  <p className="text-lg font-semibold text-gray-900">{popup.shows.toLocaleString()}</p>
+                  <p className="text-lg font-semibold text-gray-900">{(popup.shows || 0).toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">המרות</p>
-                  <p className="text-lg font-semibold text-gray-900">{popup.conversions}</p>
+                  <p className="text-lg font-semibold text-gray-900">{popup.conversions || 0}</p>
                 </div>
               </div>
 
               <div className="mt-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-500">שיעור המרה</span>
-                  <span className="text-sm font-semibold text-gray-900">{popup.conversionRate}%</span>
+                  <span className="text-sm font-semibold text-gray-900">{popup.conversionRate || 0}%</span>
                 </div>
                 <div className="mt-1 w-full bg-gray-200 rounded-full h-2">
                   <div 
                     className="bg-primary-600 h-2 rounded-full" 
-                    style={{ width: `${Math.min(popup.conversionRate, 100)}%` }}
+                    style={{ width: `${Math.min(popup.conversionRate || 0, 100)}%` }}
                   ></div>
                 </div>
               </div>
@@ -285,18 +352,27 @@ export const Popups: React.FC = () => {
                   <button className="text-gray-600 hover:text-gray-900">
                     <Edit className="h-4 w-4" />
                   </button>
-                  <button className="text-red-600 hover:text-red-900">
+                  <button 
+                    onClick={() => handleDeletePopup(popup.id)}
+                    className="text-red-600 hover:text-red-900"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
                 <div className="flex space-x-2">
                   {popup.status === 'ACTIVE' ? (
-                    <button className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    <button 
+                      onClick={() => handleToggleStatus(popup.id)}
+                      className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    >
                       <Pause className="h-4 w-4 ml-1" />
                       השה
                     </button>
                   ) : (
-                    <button className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700">
+                    <button 
+                      onClick={() => handleToggleStatus(popup.id)}
+                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
+                    >
                       <Play className="h-4 w-4 ml-1" />
                       הפעל
                     </button>
@@ -329,51 +405,88 @@ export const Popups: React.FC = () => {
         title="יצירת פופאפ חדש"
         size="lg"
       >
-        <form className="space-y-5">
-          <FormInput
-            id="name"
-            label="שם הפופאפ"
-            placeholder="לדוגמה: הרשמה לניוזלטר"
-            required
-          />
+        <form onSubmit={handleCreatePopup} className="space-y-5">
+          <div>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1.5">
+              שם הפופאפ
+              <span className="text-red-500 mr-1">*</span>
+            </label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              required
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+              placeholder="לדוגמה: הרשמה לניוזלטר"
+            />
+          </div>
 
-          <FormInput
-            id="title"
-            label="כותרת הפופאפ"
-            placeholder="לדוגמה: הצטרף לניוזלטר שלנו!"
-            required
-          />
+          <div>
+            <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1.5">
+              כותרת הפופאפ
+              <span className="text-red-500 mr-1">*</span>
+            </label>
+            <input
+              type="text"
+              id="title"
+              name="title"
+              required
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+              placeholder="לדוגמה: הצטרף לניוזלטר שלנו!"
+            />
+          </div>
 
-          <FormTextarea
-            id="content"
-            label="תוכן הפופאפ"
-            placeholder="הכנס את תוכן הפופאפ כאן..."
-            rows={4}
-          />
+          <div>
+            <label htmlFor="content" className="block text-sm font-medium text-gray-700 mb-1.5">
+              תוכן הפופאפ
+              <span className="text-red-500 mr-1">*</span>
+            </label>
+            <textarea
+              id="content"
+              name="content"
+              required
+              rows={4}
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+              placeholder="הכנס את תוכן הפופאפ כאן..."
+            />
+          </div>
 
-          <FormSelect
-            id="trigger"
-            label="טריגר"
-            required
-          >
-            <option value="">בחר טריגר</option>
-            <option value="EXIT_INTENT">כוונת יציאה</option>
-            <option value="TIME_DELAY">עיכוב זמן</option>
-            <option value="SCROLL_PERCENTAGE">אחוז גלילה</option>
-            <option value="PAGE_VIEWS">צפיות בדף</option>
-            <option value="CUSTOM">מותאם אישית</option>
-          </FormSelect>
+          <div>
+            <label htmlFor="trigger" className="block text-sm font-medium text-gray-700 mb-1.5">
+              טריגר
+              <span className="text-red-500 mr-1">*</span>
+            </label>
+            <select
+              id="trigger"
+              name="trigger"
+              required
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+            >
+              <option value="">בחר טריגר</option>
+              <option value="EXIT_INTENT">כוונת יציאה</option>
+              <option value="TIME_DELAY">עיכוב זמן</option>
+              <option value="SCROLL_PERCENTAGE">אחוז גלילה</option>
+              <option value="PAGE_VIEWS">צפיות בדף</option>
+              <option value="CUSTOM">מותאם אישית</option>
+            </select>
+          </div>
 
-          <FormInput
-            id="pages"
-            label="עמודי יעד"
-            placeholder="לדוגמה: /products, /checkout"
-          />
-
-          <FormButtons
-            submitText="צור פופאפ"
-            onCancel={() => setIsCreateModalOpen(false)}
-          />
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            >
+              ביטול
+            </button>
+            <button
+              type="submit"
+              disabled={createLoading}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {createLoading ? "יוצר..." : "צור פופאפ"}
+            </button>
+          </div>
         </form>
       </Modal>
     </div>

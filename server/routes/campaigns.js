@@ -2,6 +2,7 @@ const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { z } = require('zod');
 const { authenticateToken } = require('../middleware/auth');
+const { addCampaignToQueue, scheduleCampaign, cancelCampaign, getQueueStats } = require('../services/campaignQueue');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -180,7 +181,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 // Send campaign
 router.post('/:id/send', authenticateToken, async (req, res) => {
   try {
-    const { contactIds } = req.body;
+    const { contactIds, segmentIds, sendToAll } = req.body;
 
     const campaign = await prisma.campaign.findFirst({
       where: {
@@ -197,32 +198,251 @@ router.post('/:id/send', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Campaign is not in draft status' });
     }
 
-    // Update campaign status
-    await prisma.campaign.update({
-      where: { id: req.params.id },
-      data: { 
-        status: 'SENDING',
-        sentAt: new Date()
-      }
-    });
+    let targetContacts = [];
 
-    // Add contacts to campaign
-    if (contactIds && contactIds.length > 0) {
-      await prisma.campaignContact.createMany({
-        data: contactIds.map(contactId => ({
-          campaignId: req.params.id,
-          contactId,
-          status: 'PENDING'
-        }))
+    if (sendToAll) {
+      // שלח לכל אנשי הקשר הפעילים
+      targetContacts = await prisma.contact.findMany({
+        where: {
+          userId: req.user.id,
+          status: 'ACTIVE'
+        },
+        select: { id: true }
+      });
+    } else if (segmentIds && segmentIds.length > 0) {
+      // שלח לסגמנטים ספציפיים
+      const segmentContacts = await prisma.segmentContact.findMany({
+        where: {
+          segmentId: { in: segmentIds },
+          segment: { userId: req.user.id }
+        },
+        include: {
+          contact: {
+            where: { status: 'ACTIVE' }
+          }
+        }
+      });
+      targetContacts = segmentContacts
+        .filter(sc => sc.contact)
+        .map(sc => ({ id: sc.contact.id }));
+    } else if (contactIds && contactIds.length > 0) {
+      // שלח לאנשי קשר ספציפיים
+      targetContacts = await prisma.contact.findMany({
+        where: {
+          id: { in: contactIds },
+          userId: req.user.id,
+          status: 'ACTIVE'
+        },
+        select: { id: true }
       });
     }
 
-    // TODO: Implement actual sending logic (email service, SMS service, etc.)
+    if (targetContacts.length === 0) {
+      return res.status(400).json({ message: 'No valid contacts found for sending' });
+    }
 
-    res.json({ message: 'Campaign sent successfully' });
+    // הוספת אנשי קשר לקמפיין
+    await prisma.campaignContact.createMany({
+      data: targetContacts.map(contact => ({
+        campaignId: req.params.id,
+        contactId: contact.id,
+        status: 'PENDING'
+      })),
+      skipDuplicates: true
+    });
+
+    // הוספה לתור לשליחה ברקע
+    if (campaign.scheduledAt && new Date(campaign.scheduledAt) > new Date()) {
+      // קמפיין מתוזמן
+      await scheduleCampaign(req.params.id, req.user.id, campaign.scheduledAt);
+      await prisma.campaign.update({
+        where: { id: req.params.id },
+        data: { status: 'SCHEDULED' }
+      });
+    } else {
+      // שליחה מיידית
+      await addCampaignToQueue(req.params.id, req.user.id);
+    }
+
+    res.json({ 
+      message: 'Campaign queued for sending',
+      contactCount: targetContacts.length,
+      scheduled: campaign.scheduledAt && new Date(campaign.scheduledAt) > new Date()
+    });
   } catch (error) {
     console.error('Send campaign error:', error);
     res.status(500).json({ message: 'Failed to send campaign' });
+  }
+});
+
+// Cancel campaign
+router.post('/:id/cancel', authenticateToken, async (req, res) => {
+  try {
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.id
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaign not found' });
+    }
+
+    if (!['SCHEDULED', 'SENDING'].includes(campaign.status)) {
+      return res.status(400).json({ message: 'Campaign cannot be cancelled' });
+    }
+
+    const cancelled = await cancelCampaign(req.params.id);
+    
+    if (cancelled) {
+      res.json({ message: 'Campaign cancelled successfully' });
+    } else {
+      res.status(400).json({ message: 'Campaign could not be cancelled' });
+    }
+  } catch (error) {
+    console.error('Cancel campaign error:', error);
+    res.status(500).json({ message: 'Failed to cancel campaign' });
+  }
+});
+
+// Get campaign stats
+router.get('/:id/stats', authenticateToken, async (req, res) => {
+  try {
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.id
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaign not found' });
+    }
+
+    const stats = await prisma.campaignContact.groupBy({
+      by: ['status'],
+      where: { campaignId: req.params.id },
+      _count: { status: true }
+    });
+
+    const totalContacts = await prisma.campaignContact.count({
+      where: { campaignId: req.params.id }
+    });
+
+    const statusCounts = stats.reduce((acc, stat) => {
+      acc[stat.status.toLowerCase() + 'Count'] = stat._count.status;
+      return acc;
+    }, {});
+
+    const sentCount = statusCounts.sentCount || 0;
+    const deliveredCount = statusCounts.deliveredCount || 0;
+    const openedCount = statusCounts.openedCount || 0;
+    const clickedCount = statusCounts.clickedCount || 0;
+    const bouncedCount = statusCounts.bouncedCount || 0;
+    const failedCount = statusCounts.failedCount || 0;
+
+    res.json({
+      totalContacts,
+      sentCount,
+      deliveredCount,
+      openedCount,
+      clickedCount,
+      bouncedCount,
+      failedCount,
+      openRate: sentCount > 0 ? (openedCount / sentCount) * 100 : 0,
+      clickRate: sentCount > 0 ? (clickedCount / sentCount) * 100 : 0,
+      deliveryRate: totalContacts > 0 ? (deliveredCount / totalContacts) * 100 : 0
+    });
+  } catch (error) {
+    console.error('Get campaign stats error:', error);
+    res.status(500).json({ message: 'Failed to fetch campaign stats' });
+  }
+});
+
+// Get overall stats
+router.get('/stats/overview', authenticateToken, async (req, res) => {
+  try {
+    const totalCampaigns = await prisma.campaign.count({
+      where: { userId: req.user.id }
+    });
+
+    const activeCampaigns = await prisma.campaign.count({
+      where: { 
+        userId: req.user.id,
+        status: { in: ['SENDING', 'SCHEDULED'] }
+      }
+    });
+
+    // Calculate average rates from sent campaigns
+    const sentCampaigns = await prisma.campaign.findMany({
+      where: {
+        userId: req.user.id,
+        status: 'SENT'
+      },
+      include: {
+        _count: {
+          select: { contacts: true }
+        }
+      }
+    });
+
+    let totalOpenRate = 0;
+    let totalClickRate = 0;
+    let campaignCount = 0;
+
+    for (const campaign of sentCampaigns) {
+      const stats = await prisma.campaignContact.groupBy({
+        by: ['status'],
+        where: { campaignId: campaign.id },
+        _count: { status: true }
+      });
+
+      const statusCounts = stats.reduce((acc, stat) => {
+        acc[stat.status.toLowerCase() + 'Count'] = stat._count.status;
+        return acc;
+      }, {});
+
+      const sentCount = statusCounts.sentCount || 0;
+      const openedCount = statusCounts.openedCount || 0;
+      const clickedCount = statusCounts.clickedCount || 0;
+
+      if (sentCount > 0) {
+        totalOpenRate += (openedCount / sentCount) * 100;
+        totalClickRate += (clickedCount / sentCount) * 100;
+        campaignCount++;
+      }
+    }
+
+    res.json({
+      totalCampaigns,
+      activeCampaigns,
+      averageOpenRate: campaignCount > 0 ? totalOpenRate / campaignCount : 0,
+      averageClickRate: campaignCount > 0 ? totalClickRate / campaignCount : 0
+    });
+  } catch (error) {
+    console.error('Get overview stats error:', error);
+    res.status(500).json({ message: 'Failed to fetch overview stats' });
+  }
+});
+
+// Get queue stats (admin only)
+router.get('/queue/stats', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id }
+    });
+
+    if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const queueStats = await getQueueStats();
+    res.json(queueStats);
+  } catch (error) {
+    console.error('Get queue stats error:', error);
+    res.status(500).json({ message: 'Failed to fetch queue stats' });
   }
 });
 

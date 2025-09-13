@@ -3,7 +3,7 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { authenticateToken } = require('../middleware/auth');
-const smsService = require('../services/smsService');
+const smsQueueService = require('../services/smsQueueService');
 
 // שליחת SMS בודד
 router.post('/send', authenticateToken, async (req, res) => {
@@ -20,7 +20,7 @@ router.post('/send', authenticateToken, async (req, res) => {
       select: { smsSenderName: true }
     });
 
-    const result = await smsService.sendSms(
+    const result = await smsQueueService.sendSms(
       req.user.id,
       recipient,
       content,
@@ -36,43 +36,15 @@ router.post('/send', authenticateToken, async (req, res) => {
   }
 });
 
-// שליחת SMS לקמפיין
-router.post('/send-campaign', authenticateToken, async (req, res) => {
+// הערה: שליחת קמפיינים עברה לנתיב /api/campaigns/:id/send
+
+// קבלת סטטיסטיקות תור SMS
+router.get('/queue/stats', authenticateToken, async (req, res) => {
   try {
-    const { campaignId, recipients, content } = req.body;
-
-    if (!recipients || !recipients.length || !content) {
-      return res.status(400).json({ error: 'חובה לציין נמענים ותוכן הודעה' });
-    }
-
-    // קבלת שם השולח מהגדרות המשתמש
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { smsSenderName: true }
-    });
-
-    const result = await smsService.sendBulkSms(
-      req.user.id,
-      recipients,
-      content,
-      user.smsSenderName || undefined,
-      campaignId
-    );
-
-    // עדכון סטטוס הקמפיין
-    if (campaignId) {
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: {
-          status: 'SENT',
-          sentAt: new Date()
-        }
-      });
-    }
-
-    res.json(result);
+    const stats = await smsQueueService.getQueueStats();
+    res.json(stats);
   } catch (error) {
-    console.error('Error sending campaign SMS:', error);
+    console.error('Error getting SMS queue stats:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -82,7 +54,7 @@ router.get('/history', authenticateToken, async (req, res) => {
   try {
     const { status, campaignId, from, to } = req.query;
     
-    const messages = await smsService.getUserSmsHistory(req.user.id, {
+    const messages = await smsQueueService.getUserSmsHistory(req.user.id, {
       status,
       campaignId,
       from,
@@ -99,7 +71,7 @@ router.get('/history', authenticateToken, async (req, res) => {
 // קבלת סטטיסטיקות SMS
 router.get('/stats', authenticateToken, async (req, res) => {
   try {
-    const stats = await smsService.getSmsStats(req.user.id);
+    const stats = await smsQueueService.getSmsStats(req.user.id);
     res.json(stats);
   } catch (error) {
     console.error('Error getting SMS stats:', error);
@@ -135,7 +107,7 @@ router.post('/packages', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'חסרים פרטים' });
     }
 
-    const smsPackage = await smsService.addSmsPackage(userId, {
+    const smsPackage = await smsQueueService.addSmsPackage(userId, {
       name,
       amount,
       price
@@ -194,7 +166,7 @@ router.post('/api-keys', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'חובה לציין שם ל-API key' });
     }
 
-    const apiKey = await smsService.createApiKey(req.user.id, name);
+    const apiKey = await smsQueueService.createApiKey(req.user.id, name);
     res.json(apiKey);
   } catch (error) {
     console.error('Error creating API key:', error);
@@ -250,7 +222,7 @@ router.post('/webhook/status', async (req, res) => {
       return res.status(400).json({ error: 'חסרים פרמטרים' });
     }
 
-    await smsService.updateSmsStatus(to, parseInt(status));
+    await smsQueueService.updateSmsStatus(to, parseInt(status));
     res.status(200).send('OK');
   } catch (error) {
     console.error('Error handling SMS status webhook:', error);
@@ -265,7 +237,7 @@ router.get('/check-provider-balance', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'אין הרשאה' });
     }
 
-    const balance = await smsService.checkSms4FreeBalance();
+    const balance = await smsQueueService.checkSms4FreeBalance();
     res.json(balance);
   } catch (error) {
     console.error('Error checking provider balance:', error);

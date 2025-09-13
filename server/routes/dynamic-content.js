@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const dynamicContent = require('../services/dynamicContent');
-const auth = require('../middleware/auth');
+const { authenticateToken: auth } = require('../middleware/auth');
 
 // יצירת תוכן דינמי לקונטקט
 router.post('/generate/:contactId', auth, async (req, res) => {

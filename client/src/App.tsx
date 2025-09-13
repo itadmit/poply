@@ -21,6 +21,8 @@ import SmsPurchase from './pages/SmsPurchase';
 import SmsPurchaseSuccess from './pages/SmsPurchaseSuccess';
 import SmsPurchaseFailed from './pages/SmsPurchaseFailed';
 import TrackingSetup from './pages/TrackingSetup';
+// import { AutomationBuilderPage } from './pages/AutomationBuilderPage';
+import UnsubscribePage from './pages/UnsubscribePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -41,6 +43,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/unsubscribe/:token" element={<UnsubscribePage />} />
               <Route
                 path="/*"
                 element={
@@ -64,6 +67,7 @@ function App() {
                         <Route path="/sms/purchase-success" element={<SmsPurchaseSuccess />} />
                         <Route path="/sms/purchase-failed" element={<SmsPurchaseFailed />} />
                         <Route path="/tracking-setup" element={<TrackingSetup />} />
+                        {/* <Route path="/automation-builder" element={<AutomationBuilderPage />} /> */}
                       </Routes>
                     </Layout>
                   </ProtectedRoute>

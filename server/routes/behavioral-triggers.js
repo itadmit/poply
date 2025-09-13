@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const behavioralTriggers = require('../services/behavioralTriggers');
-const auth = require('../middleware/auth');
+const { authenticateToken: auth } = require('../middleware/auth');
 
 // יצירת טריגר התנהגותי חדש
 router.post('/', auth, async (req, res) => {

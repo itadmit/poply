@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const smsService = require('../services/smsService');
+const smsQueueService = require('../services/smsQueueService');
 
 // Middleware לבדיקת API key
 const authenticateApiKey = async (req, res, next) => {
@@ -16,7 +16,7 @@ const authenticateApiKey = async (req, res, next) => {
       });
     }
 
-    const validKey = await smsService.validateApiKey(apiKey);
+    const validKey = await smsQueueService.validateApiKey(apiKey);
     
     if (!validKey) {
       return res.status(401).json({ 
@@ -62,7 +62,7 @@ router.post('/send', authenticateApiKey, async (req, res) => {
     }
 
     // שליחת ההודעה
-    const result = await smsService.sendSms(
+    const result = await smsQueueService.sendSms(
       req.user.id,
       to,
       message,
@@ -129,7 +129,7 @@ router.post('/send-bulk', authenticateApiKey, async (req, res) => {
     const recipientsList = recipients.map(phone => ({ phone }));
 
     // שליחת ההודעות
-    const result = await smsService.sendBulkSms(
+    const result = await smsQueueService.sendBulkSms(
       req.user.id,
       recipientsList,
       message,
@@ -139,10 +139,9 @@ router.post('/send-bulk', authenticateApiKey, async (req, res) => {
     // תגובה מוצלחת
     res.json({
       success: true,
-      sent: result.sent,
-      messageIds: result.messageIds,
-      balance: req.user.smsBalance - result.sent,
-      message: `${result.sent} הודעות נשלחו בהצלחה`
+      jobId: result.jobId,
+      message: result.message,
+      totalMessages: recipients.length
     });
 
   } catch (error) {
@@ -183,7 +182,7 @@ router.get('/history', authenticateApiKey, async (req, res) => {
   try {
     const { from, to, status, limit = 100, offset = 0 } = req.query;
 
-    const messages = await smsService.getUserSmsHistory(req.user.id, {
+    const messages = await smsQueueService.getUserSmsHistory(req.user.id, {
       from,
       to,
       status

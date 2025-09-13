@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const predictiveAnalytics = require('../services/predictiveAnalytics');
-const auth = require('../middleware/auth');
+const { authenticateToken: auth } = require('../middleware/auth');
 
 // קבלת דוח תחזיות מלא לקונטקט
 router.get('/contact/:contactId/report', auth, async (req, res) => {

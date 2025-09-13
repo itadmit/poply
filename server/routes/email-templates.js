@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const emailTemplates = require('../services/emailTemplates');
-const auth = require('../middleware/auth');
+const { authenticateToken: auth } = require('../middleware/auth');
 
 // יצירת תבנית מייל חדשה
 router.post('/', auth, async (req, res) => {

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const customerJourney = require('../services/customerJourney');
-const auth = require('../middleware/auth');
+const { authenticateToken: auth } = require('../middleware/auth');
 
 // קבלת מפת מסע לקוח
 router.get('/contact/:contactId', auth, async (req, res) => {
